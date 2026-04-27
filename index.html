@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QuestRise — Life RPG Planner</title>
+  <meta name="description" content="QuestRise: A DnD-style gamified life planner. Choose your class, build real-life stats, and level up every day." />
+  <link rel="stylesheet" href="css/style.css" />
+  <style>
+    body { overflow-y: auto; }
+
+    /* Particles */
+    .particles { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+    .particle {
+      position: absolute;
+      border-radius: 50%;
+      animation: float-up linear infinite;
+    }
+    @keyframes float-up {
+      0%   { transform: translateY(100vh); opacity: 0; }
+      8%   { opacity: 0.8; }
+      92%  { opacity: 0.5; }
+      100% { transform: translateY(-10vh); opacity: 0; }
+    }
+
+    /* Glow blobs */
+    .blob { position: fixed; border-radius: 50%; pointer-events: none; }
+    .blob-1 { width:600px; height:600px; top:-200px; right:-200px; background: radial-gradient(circle, rgba(139,92,246,0.07) 0%, transparent 70%); }
+    .blob-2 { width:500px; height:500px; bottom:-200px; left:-150px; background: radial-gradient(circle, rgba(59,130,246,0.05) 0%, transparent 70%); }
+
+    /* ---- Profile Select ---- */
+    .profile-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 18px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      cursor: pointer;
+      transition: all 0.22s;
+      margin-bottom: 10px;
+      position: relative;
+    }
+    .profile-card:hover { border-color: var(--border-bright); transform: translateX(4px); box-shadow: var(--glow-purple); }
+    .profile-avatar { font-size: 2rem; width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid var(--border); flex-shrink: 0; }
+    .profile-info { flex: 1; min-width: 0; }
+    .profile-name { font-family: 'Cinzel', serif; font-size: 1rem; color: var(--text-primary); margin-bottom: 3px; }
+    .profile-meta { font-size: 0.73rem; color: var(--text-muted); }
+    .profile-arrow { color: var(--text-muted); font-size: 1.1rem; transition: transform 0.2s; }
+    .profile-card:hover .profile-arrow { transform: translateX(4px); color: var(--purple-light); }
+    .profile-lock { font-size: 0.85rem; color: var(--gold); }
+
+    /* ---- Class grid ---- */
+    .class-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    @media (max-width: 600px) { .class-grid { grid-template-columns: repeat(2, 1fr); } }
+
+    /* ---- PIN input ---- */
+    .pin-input {
+      letter-spacing: 8px;
+      font-family: 'Cinzel', serif;
+      font-size: 1.4rem;
+      text-align: center;
+      padding: 12px 0;
+    }
+
+    /* ---- Step Panels ---- */
+    .step-panel { display: none; animation: fadeStep 0.3s ease; }
+    .step-panel.active { display: block; }
+    @keyframes fadeStep { from { opacity:0; transform: translateY(10px); } to { opacity:1; transform: translateY(0); } }
+
+    /* ---- Large logo ---- */
+    .landing-logo h1 { font-size: 3.2rem; letter-spacing: 5px; }
+    @media (max-width: 500px) { .landing-logo h1 { font-size: 2.2rem; } }
+
+    /* Section separator label */
+    .or-divider {
+      display: flex; align-items: center; gap: 12px;
+      color: var(--text-muted); font-size: 0.78rem;
+      margin: 16px 0;
+    }
+    .or-divider::before, .or-divider::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+
+    /* Import drop zone */
+    .import-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .import-zone:hover { border-color: var(--border-bright); color: var(--text-secondary); }
+  </style>
+</head>
+<body>
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="particles" id="particles"></div>
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+  <div class="landing-page">
+    <div class="landing-container">
+
+      <!-- Logo -->
+      <div class="landing-logo" style="text-align:center;margin-bottom:36px;">
+        <h1>🌟 QUESTRISE</h1>
+        <p style="color:var(--text-secondary);letter-spacing:2px;margin-top:6px;">Life RPG Planner</p>
+        <div class="landing-tagline">
+          <div class="tagline-item">🎲 <span>DnD-Style Classes</span></div>
+          <div class="tagline-item">📅 <span>Calendar Quests</span></div>
+          <div class="tagline-item">⚔️ <span>Duel System</span></div>
+          <div class="tagline-item">🏆 <span>Leaderboard</span></div>
+        </div>
+      </div>
+
+      <!-- Main Card -->
+      <div class="welcome-card">
+
+        <!-- ======================================
+             SCREEN 0: Profile Select
+             ====================================== -->
+        <div class="step-panel active" id="screen-select">
+          <div id="profiles-section"><!-- injected --></div>
+        </div>
+
+        <!-- ======================================
+             SCREEN 1: PIN Unlock
+             ====================================== -->
+        <div class="step-panel" id="screen-pin">
+          <p class="step-title">🔒 Enter PIN</p>
+          <p class="step-subtitle" id="pin-hero-name">This profile is PIN protected</p>
+          <div class="form-group" style="margin-top:20px;">
+            <input type="password" id="pin-input" class="form-input pin-input"
+                   maxlength="6" placeholder="• • • •" autocomplete="off" inputmode="numeric" />
+          </div>
+          <div style="display:flex;gap:10px;margin-top:6px;">
+            <button class="btn btn-outline" onclick="showScreen('select')">← Back</button>
+            <button class="btn btn-gold" style="flex:1;" id="btn-unlock" onclick="unlockProfile()">Unlock ▶</button>
+          </div>
+        </div>
+
+        <!-- ======================================
+             SCREEN 2: Create Hero — Step A (Name)
+             ====================================== -->
+        <div class="step-panel" id="screen-create-name">
+          <!-- Step dots -->
+          <div class="step-indicator" style="margin-bottom:20px;">
+            <div class="step-dot active" id="cdot-0"></div>
+            <div class="step-dot" id="cdot-1"></div>
+            <div class="step-dot" id="cdot-2"></div>
+          </div>
+          <p class="step-title">Name Your Hero</p>
+          <p class="step-subtitle">Every legend starts with a name. What shall yours be?</p>
+
+          <div class="form-group" style="margin-top:20px;">
+            <label class="form-label" for="char-name-input">Hero Name</label>
+            <input type="text" id="char-name-input" class="form-input"
+                   maxlength="24" placeholder="Enter your hero name..." autocomplete="off"
+                   style="font-size:1.05rem;text-align:center;letter-spacing:1px;" />
+          </div>
+
+          <!-- Optional PIN -->
+          <div class="form-group">
+            <label class="form-label" for="char-pin-input">PIN (optional — protect your save)</label>
+            <input type="password" id="char-pin-input" class="form-input"
+                   maxlength="6" placeholder="Leave blank for no PIN" autocomplete="off" inputmode="numeric" />
+          </div>
+
+          <button class="btn btn-gold btn-lg btn-block" onclick="createStep(1)">Continue ➜</button>
+          <button class="btn btn-outline btn-block" style="margin-top:10px;" onclick="showScreen('select')">← Back</button>
+        </div>
+
+        <!-- ======================================
+             SCREEN 3: Create Hero — Step B (Class)
+             ====================================== -->
+        <div class="step-panel" id="screen-create-class">
+          <div class="step-indicator" style="margin-bottom:20px;">
+            <div class="step-dot done" id="cdot2-0"></div>
+            <div class="step-dot active" id="cdot2-1"></div>
+            <div class="step-dot" id="cdot2-2"></div>
+          </div>
+          <p class="step-title">Choose Your Archetype</p>
+          <p class="step-subtitle">Your class defines your starting bonuses and core identity.</p>
+
+          <div class="class-grid" id="class-grid" style="margin:18px 0;" role="radiogroup"></div>
+
+          <div style="display:flex;gap:10px;">
+            <button class="btn btn-outline" onclick="createStep(0)">← Back</button>
+            <button class="btn btn-gold" style="flex:1;" onclick="createStep(2)">Continue ➜</button>
+          </div>
+        </div>
+
+        <!-- ======================================
+             SCREEN 4: Create Hero — Step C (Confirm)
+             ====================================== -->
+        <div class="step-panel" id="screen-create-confirm">
+          <div class="step-indicator" style="margin-bottom:20px;">
+            <div class="step-dot done"></div>
+            <div class="step-dot done"></div>
+            <div class="step-dot active"></div>
+          </div>
+          <p class="step-title">Your Destiny Awaits</p>
+          <p class="step-subtitle">Review your hero before entering the world.</p>
+
+          <div id="char-preview" style="text-align:center;padding:20px 10px;"></div>
+
+          <div style="display:flex;gap:10px;margin-top:8px;">
+            <button class="btn btn-outline" onclick="createStep(1)">← Back</button>
+            <button class="btn btn-gold" style="flex:1;" id="btn-begin" onclick="beginJourney()">
+              🌟 Begin Your Journey!
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Footer -->
+      <p style="text-align:center;color:var(--text-muted);font-size:0.72rem;margin-top:18px;">
+        Progress auto-saved to your browser · Export saves to back up · No account needed
+      </p>
+    </div>
+  </div>
+
+  <!-- Hidden file input for import -->
+  <input type="file" id="import-file-input" accept=".json" style="display:none;" onchange="handleImportFile(this)" />
+
+  <script src="js/app.js"></script>
+  <script>
+    let selectedClass = null;
+    let pendingProfileId = null; // profile waiting for PIN
+
+    // ============================================================
+    // INIT
+    // ============================================================
+    window.addEventListener('DOMContentLoaded', () => {
+      spawnParticles();
+      buildClassGrid();
+      renderProfileSelect();
+
+      // Clear active profile so user must explicitly load one
+      // (but only if coming from a logout, not a refresh during creation)
+    });
+
+    // ============================================================
+    // SCREEN NAVIGATION
+    // ============================================================
+    function showScreen(name) {
+      document.querySelectorAll('.step-panel').forEach(p => p.classList.remove('active'));
+      const el = document.getElementById('screen-' + name);
+      if (el) el.classList.add('active');
+    }
+
+    // ============================================================
+    // PROFILE SELECT SCREEN
+    // ============================================================
+    function renderProfileSelect() {
+      const profiles = getProfiles();
+      const keys = Object.keys(profiles);
+      const section = document.getElementById('profiles-section');
+
+      // If already logged in, redirect immediately
+      if (getActiveProfileId() && getCharacter()) {
+        window.location.href = 'dashboard.html';
+        return;
+      }
+
+      if (keys.length === 0) {
+        // No profiles → jump straight to creation
+        section.innerHTML = `
+          <p class="step-title" style="margin-bottom:6px;">Begin Your Journey, Hero</p>
+          <p class="step-subtitle" style="margin-bottom:24px;">No save files found. Create your first hero!</p>
+          <button class="btn btn-gold btn-lg btn-block" id="btn-new-hero-empty" onclick="showCreateFlow()">
+            ✨ Create Your Hero
+          </button>
+          <div class="or-divider" style="margin-top:18px;">or</div>
+          <div class="import-zone" id="import-zone" onclick="document.getElementById('import-file-input').click()">
+            📂 Import Save File (.json)
+          </div>`;
+        return;
+      }
+
+      // Show existing profiles
+      const profileCards = keys
+        .sort((a, b) => new Date(profiles[b].lastPlayed) - new Date(profiles[a].lastPlayed))
+        .map(id => {
+          const p = profiles[id];
+          const cls = CLASSES[p.class] || CLASSES.warrior;
+          const xpStr = p.totalXp ? `${(p.totalXp).toLocaleString()} XP` : '0 XP';
+          return `
+            <div class="profile-card" onclick="loadProfileUI('${id}')" id="pc-${id}">
+              <div class="profile-avatar" style="background:${cls.color}22;border-color:${cls.color}55;">
+                ${cls.emoji}
+              </div>
+              <div class="profile-info">
+                <div class="profile-name">${p.heroName}</div>
+                <div class="profile-meta">
+                  <span class="tag tag-${p.class}" style="font-size:0.65rem;padding:2px 7px;">${cls.name}</span>
+                  &nbsp; Lv.${p.level} · ${xpStr}
+                </div>
+                <div style="font-size:0.68rem;color:var(--text-muted);margin-top:3px;">
+                  Last played ${timeAgo(p.lastPlayed)}
+                </div>
+              </div>
+              ${p.pin ? `<div class="profile-lock">🔒</div>` : ''}
+              <div class="profile-arrow">›</div>
+            </div>`;
+        }).join('');
+
+      section.innerHTML = `
+        <p class="step-title" style="margin-bottom:18px;">Welcome Back, Hero!</p>
+        <p class="section-title">Your Save Files</p>
+        ${profileCards}
+
+        <div class="or-divider">or</div>
+
+        <button class="btn btn-outline btn-block" id="btn-new-hero" onclick="showCreateFlow()">
+          ✨ Create New Hero
+        </button>
+        <div class="import-zone" style="margin-top:10px;" onclick="document.getElementById('import-file-input').click()">
+          📂 Import Save File
+        </div>`;
+    }
+
+    function loadProfileUI(id) {
+      const profiles = getProfiles();
+      const profile  = profiles[id];
+      if (!profile) return;
+
+      if (profile.pin) {
+        // Need PIN
+        pendingProfileId = id;
+        document.getElementById('pin-hero-name').textContent = `${profile.heroName} — enter your PIN`;
+        document.getElementById('pin-input').value = '';
+        showScreen('pin');
+        setTimeout(() => document.getElementById('pin-input').focus(), 100);
+      } else {
+        // Load directly
+        const result = loadProfile(id);
+        if (result.success) {
+          showToast(`Welcome back, ${profile.heroName}!`, 'success');
+          setTimeout(() => { window.location.href = 'dashboard.html'; }, 700);
+        }
+      }
+    }
+
+    function unlockProfile() {
+      const pin = document.getElementById('pin-input').value;
+      const result = loadProfile(pendingProfileId, pin);
+      if (result.success) {
+        const profiles = getProfiles();
+        showToast(`Welcome back, ${profiles[pendingProfileId]?.heroName}!`, 'success');
+        setTimeout(() => { window.location.href = 'dashboard.html'; }, 700);
+      } else {
+        showToast('❌ Incorrect PIN. Try again.', 'error');
+        document.getElementById('pin-input').value = '';
+        document.getElementById('pin-input').focus();
+      }
+    }
+
+    // Allow Enter key for PIN
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('pin-input').addEventListener('keydown', e => {
+        if (e.key === 'Enter') unlockProfile();
+      });
+      document.getElementById('char-name-input').addEventListener('keydown', e => {
+        if (e.key === 'Enter') createStep(1);
+      });
+    });
+
+    // ============================================================
+    // CREATE HERO FLOW
+    // ============================================================
+    function showCreateFlow() {
+      buildClassGrid();
+      showScreen('create-name');
+      setTimeout(() => document.getElementById('char-name-input').focus(), 100);
+    }
+
+    function createStep(step) {
+      if (step === 1) {
+        const name = document.getElementById('char-name-input').value.trim();
+        if (!name || name.length < 2) {
+          showToast('Please enter a name (at least 2 characters)', 'warning');
+          document.getElementById('char-name-input').focus();
+          return;
+        }
+        showScreen('create-class');
+      } else if (step === 2) {
+        if (!selectedClass) {
+          showToast('Please choose your class!', 'warning');
+          return;
+        }
+        buildCharPreview();
+        showScreen('create-confirm');
+      } else if (step === 0) {
+        showScreen('create-name');
+      }
+    }
+
+    function buildClassGrid() {
+      const grid = document.getElementById('class-grid');
+      if (!grid) return;
+      grid.innerHTML = Object.entries(CLASSES).map(([key, cls]) => {
+        const bonusStr = Object.entries(cls.bonuses)
+          .map(([s, v]) => `<span class="tag tag-${s}" style="font-size:0.65rem;">+${v} ${s.toUpperCase()}</span>`)
+          .join('');
+        return `
+          <div class="class-card ${selectedClass === key ? 'selected' : ''}"
+               id="class-${key}" onclick="selectClass('${key}')"
+               role="radio" aria-checked="${selectedClass === key}" tabindex="0"
+               onkeydown="if(event.key==='Enter'||event.key===' ')selectClass('${key}')">
+            <span class="class-icon">${cls.emoji}</span>
+            <div class="class-name">${cls.name}</div>
+            <div class="class-desc">${cls.description}</div>
+            <div class="class-bonus" style="margin-top:10px;">${bonusStr}</div>
+          </div>`;
+      }).join('');
+    }
+
+    function selectClass(key) {
+      selectedClass = key;
+      document.querySelectorAll('.class-card').forEach(el => {
+        el.classList.toggle('selected', el.id === 'class-' + key);
+        el.setAttribute('aria-checked', el.id === 'class-' + key);
+      });
+    }
+
+    function buildCharPreview() {
+      const name = document.getElementById('char-name-input').value.trim();
+      const pin  = document.getElementById('char-pin-input').value;
+      const cls  = CLASSES[selectedClass];
+
+      const bonusRows = Object.entries(cls.bonuses)
+        .map(([s, v]) => `
+          <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.78rem;">
+            <span style="color:var(--text-secondary)">${STATS[s].label}</span>
+            <span style="color:var(--${s})">+${10 + v} (10 base + ${v})</span>
+          </div>`).join('');
+
+      document.getElementById('char-preview').innerHTML = `
+        <div style="font-size:3.5rem;margin-bottom:10px;">${cls.emoji}</div>
+        <div style="font-family:'Cinzel',serif;font-size:1.4rem;color:var(--text-primary);margin-bottom:4px;">${name}</div>
+        <div style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:16px;">Novice ${cls.name}</div>
+        ${pin ? `<div style="color:var(--gold);font-size:0.78rem;margin-bottom:12px;">🔒 PIN protected</div>` : ''}
+        <div class="level-badge" style="margin:0 auto 18px;width:fit-content;">
+          <span>Level</span><span class="level-num">1</span>
+        </div>
+        <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:var(--radius);padding:14px;text-align:left;">
+          <div style="font-size:0.68rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Starting Stats</div>
+          ${bonusRows}
+          <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.78rem;">
+            <span style="color:var(--text-muted)">All other stats</span>
+            <span style="color:var(--text-secondary)">10 (base)</span>
+          </div>
+        </div>
+        <div style="margin-top:12px;font-size:0.75rem;color:var(--text-muted);">"${cls.description}"</div>`;
+    }
+
+    function beginJourney() {
+      const name = document.getElementById('char-name-input').value.trim();
+      const pin  = document.getElementById('char-pin-input').value.trim();
+      if (!name || !selectedClass) return;
+
+      const btn = document.getElementById('btn-begin');
+      btn.disabled = true;
+      btn.textContent = '✨ Creating hero...';
+
+      createCharacter(name, selectedClass, pin);
+      showToast(`Welcome, ${name}! Your quest begins!`, 'success');
+      setTimeout(() => { window.location.href = 'dashboard.html'; }, 900);
+    }
+
+    // ============================================================
+    // IMPORT SAVE FILE
+    // ============================================================
+    function handleImportFile(input) {
+      const file = input.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = importSave(e.target.result);
+        if (result.success) {
+          showToast('✅ Save file imported! Loading...', 'success');
+          setTimeout(() => { window.location.href = 'dashboard.html'; }, 1000);
+        } else {
+          showToast('❌ ' + result.error, 'error');
+        }
+      };
+      reader.readAsText(file);
+      input.value = '';
+    }
+
+    // ============================================================
+    // PARTICLES
+    // ============================================================
+    function spawnParticles() {
+      const container = document.getElementById('particles');
+      for (let i = 0; i < 28; i++) {
+        const p = document.createElement('div');
+        p.className = 'particle';
+        const size = 1 + Math.random() * 3;
+        p.style.cssText = `
+          left: ${Math.random() * 100}%;
+          width: ${size}px; height: ${size}px;
+          animation-duration: ${6 + Math.random() * 12}s;
+          animation-delay: ${Math.random() * -18}s;
+          background: ${Math.random() > 0.5 ? 'rgba(139,92,246,0.55)' : 'rgba(240,180,41,0.45)'};
+        `;
+        container.appendChild(p);
+      }
+    }
+  </script>
+</body>
+</html>
