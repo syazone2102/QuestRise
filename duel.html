@@ -105,7 +105,24 @@
             </div>
 
             <p class="section-title">Step 1: Select Opponent</p>
-            <div class="opponent-grid" id="opponent-grid"><!-- injected --></div>
+
+            <!-- Simulated / Friends sub-tabs -->
+            <div style="display:flex;gap:8px;margin-bottom:14px;">
+              <button class="btn btn-sm" id="opp-tab-sim"
+                style="background:rgba(239,68,68,0.12);color:var(--red);border:1px solid rgba(239,68,68,0.3);"
+                onclick="switchOppTab('sim')">🤖 Rivals</button>
+              <button class="btn btn-sm" id="opp-tab-friends"
+                style="background:rgba(255,255,255,0.04);color:var(--text-muted);border:1px solid var(--border);"
+                onclick="switchOppTab('friends')">👥 Friends <span id="friends-badge"></span></button>
+              <a href="friends.html" class="btn btn-sm btn-outline" style="margin-left:auto;">+ Add Friend</a>
+            </div>
+
+            <div id="opponent-grid-sim">
+              <div class="opponent-grid" id="opponent-grid"><!-- injected --></div>
+            </div>
+            <div id="opponent-grid-friends" style="display:none;">
+              <div class="opponent-grid" id="friend-opponent-grid"><!-- injected --></div>
+            </div>
 
             <p class="section-title">Step 2: Define the Challenge</p>
 
@@ -204,24 +221,90 @@ function initPage() {
   buildCatSelect();
   renderArenaStats();
   renderActiveDuels();
+  expireDuels();
 
   // Live XP preview
   ['duel-task-cat','duel-task-diff'].forEach(id => {
     document.getElementById(id).addEventListener('change', updateDuelXPPreview);
   });
   updateDuelXPPreview();
+
+  // Auto-select friend if coming from friends.html (?friend=...)
+  const params = new URLSearchParams(window.location.search);
+  const preselect = params.get('friend');
+  if (preselect) {
+    switchDuelTab('challenge');
+    switchOppTab('friends');
+    setTimeout(() => selectOpponent(preselect, 'friend'), 100);
+  }
+}
+
+let currentOppTab = 'sim';
+
+function switchOppTab(tab) {
+  currentOppTab = tab;
+  document.getElementById('opponent-grid-sim').style.display     = tab === 'sim'     ? 'block' : 'none';
+  document.getElementById('opponent-grid-friends').style.display = tab === 'friends' ? 'block' : 'none';
+
+  const simBtn = document.getElementById('opp-tab-sim');
+  const frnBtn = document.getElementById('opp-tab-friends');
+  if (tab === 'sim') {
+    simBtn.style.cssText = 'background:rgba(239,68,68,0.12);color:var(--red);border:1px solid rgba(239,68,68,0.3);';
+    frnBtn.style.cssText = 'background:rgba(255,255,255,0.04);color:var(--text-muted);border:1px solid var(--border);';
+  } else {
+    frnBtn.style.cssText = 'background:rgba(16,185,129,0.12);color:var(--agi);border:1px solid rgba(16,185,129,0.3);';
+    simBtn.style.cssText = 'background:rgba(255,255,255,0.04);color:var(--text-muted);border:1px solid var(--border);';
+  }
 }
 
 function buildOpponentGrid() {
+  // Simulated rivals
   const grid = document.getElementById('opponent-grid');
   grid.innerHTML = SIMULATED_PLAYERS.map(p => {
     const cls = CLASSES[p.class];
     return `
-      <div class="opponent-card" id="opp-${p.id}" onclick="selectOpponent('${p.id}')">
+      <div class="opponent-card" id="opp-${p.id}" onclick="selectOpponent('${p.id}','sim')">
         <div class="opp-avatar">${cls.emoji}</div>
         <div class="opp-name">${p.name}</div>
         <div class="opp-level">Lv.${p.level} ${cls.name}</div>
         <div style="margin-top:6px;"><span class="tag tag-${p.class}">${cls.name}</span></div>
+      </div>
+    `;
+  }).join('');
+
+  // Friends opponents
+  buildFriendOpponentGrid();
+
+  // Update friends badge
+  const fc = getFriends().length;
+  const badge = document.getElementById('friends-badge');
+  if (badge) badge.textContent = fc > 0 ? `(${fc})` : '';
+}
+
+function buildFriendOpponentGrid() {
+  const grid = document.getElementById('friend-opponent-grid');
+  const friends = getFriends();
+
+  if (friends.length === 0) {
+    grid.innerHTML = `
+      <div style="grid-column:1/-1;">
+        <div class="empty-state" style="min-height:140px;">
+          <span class="empty-icon">👥</span>
+          <p>No friends added yet.</p>
+          <a href="friends.html" class="btn btn-outline btn-sm" style="margin-top:10px;">Add Friends</a>
+        </div>
+      </div>`;
+    return;
+  }
+
+  grid.innerHTML = friends.map(f => {
+    const cls = CLASSES[f.class] || CLASSES.warrior;
+    return `
+      <div class="opponent-card" id="opp-${f.friendId}" onclick="selectOpponent('${f.friendId}','friend')">
+        <div class="opp-avatar">${cls.emoji}</div>
+        <div class="opp-name">${f.name}</div>
+        <div class="opp-level">Lv.${f.level} ${cls.name}</div>
+        <div style="margin-top:4px;font-size:0.65rem;color:var(--agi);">👥 Friend</div>
       </div>
     `;
   }).join('');
@@ -234,22 +317,25 @@ function buildCatSelect() {
   ).join('');
 }
 
-function selectOpponent(id) {
+function selectOpponent(id, type = 'sim') {
   selectedOpponentId = id;
+  // Deselect all cards from both grids
   document.querySelectorAll('.opponent-card').forEach(c => c.classList.remove('selected'));
   const card = document.getElementById('opp-' + id);
   if (card) card.classList.add('selected');
 
-  // Show opponent detail
-  const p = SIMULATED_PLAYERS.find(p => p.id === id);
-  if (p) renderOpponentDetail(p);
+  // Show detail panel
+  const simPlayer = SIMULATED_PLAYERS.find(p => p.id === id);
+  const friend    = getFriends().find(f => f.friendId === id || f.id === id);
+  const target    = simPlayer || friend;
+  if (target) renderOpponentDetail(target, !!friend);
 }
 
-function renderOpponentDetail(p) {
+function renderOpponentDetail(p, isFriend = false) {
   const preview = document.getElementById('opponent-preview');
-  const detail = document.getElementById('opponent-detail');
+  const detail  = document.getElementById('opponent-detail');
   preview.style.display = 'block';
-  const cls = CLASSES[p.class];
+  const cls = CLASSES[p.class] || CLASSES.warrior;
 
   detail.innerHTML = `
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;">
@@ -257,16 +343,22 @@ function renderOpponentDetail(p) {
       <div>
         <div style="font-weight:600;font-size:1rem;color:var(--text-primary)">${p.name}</div>
         <div style="font-size:0.8rem;color:var(--text-secondary)">Level ${p.level} ${cls.name}</div>
+        ${isFriend ? `<div style="font-size:0.72rem;color:var(--agi);margin-top:2px;">👥 Real Friend</div>` : ''}
+        ${p.title ? `<div style="font-size:0.68rem;color:var(--text-muted);font-style:italic;">${p.title}</div>` : ''}
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-      ${Object.entries(p.stats).map(([k,v]) => `
+      ${Object.entries(p.stats || {}).map(([k,v]) => `
         <div style="display:flex;justify-content:space-between;font-size:0.78rem;padding:4px 0;border-bottom:1px solid var(--border);">
           <span style="color:var(--${k})">${STATS[k].short}</span>
           <span style="font-weight:600">${v}</span>
         </div>
       `).join('')}
     </div>
+    ${isFriend ? `
+    <div style="margin-top:12px;background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.2);border-radius:var(--radius);padding:10px;font-size:0.75rem;color:var(--text-secondary);">
+      ⚔️ Friend duels use your friend's real stats. The closer your levels, the more competitive the match!
+    </div>` : ''}
   `;
 }
 
@@ -444,8 +536,14 @@ function issueChallenge() {
   });
 
   if (duel) {
-    const opp = SIMULATED_PLAYERS.find(p => p.id === selectedOpponentId);
-    showToast(`⚔️ Challenge issued to ${opp?.name}! You have 48 hours!`, 'success');
+    // Resolve name from sim players or friends
+    const opp = SIMULATED_PLAYERS.find(p => p.id === selectedOpponentId)
+             || getFriends().find(f => f.friendId === selectedOpponentId || f.id === selectedOpponentId);
+    const isFriend = !!getFriends().find(f => f.friendId === selectedOpponentId || f.id === selectedOpponentId);
+    const msg = isFriend
+      ? `⚔️ Challenge issued to your friend ${opp?.name}! Share your progress — you have 48 hours!`
+      : `⚔️ Challenge issued to ${opp?.name}! You have 48 hours!`;
+    showToast(msg, 'success', 4500);
     document.getElementById('duel-task-title').value = '';
     selectedOpponentId = null;
     document.querySelectorAll('.opponent-card').forEach(c => c.classList.remove('selected'));

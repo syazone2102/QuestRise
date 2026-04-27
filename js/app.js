@@ -269,6 +269,93 @@ function getCharacter() { const s = getState(); return s ? s.character : null; }
 function getQuests()    { const s = getState(); return s ? (s.quests  || []) : []; }
 function getDuels()     { const s = getState(); return s ? (s.duels   || []) : []; }
 function getActivity()  { const s = getState(); return s ? (s.activity|| []) : []; }
+function getFriends()   { const s = getState(); return s ? (s.friends  || []) : []; }
+
+// ============================================================
+// FRIENDS / HERO CODE SYSTEM
+// ============================================================
+const HERO_CODE_PREFIX = 'QR1:';
+
+/**
+ * Generate a shareable Hero Code from the current character.
+ * Encodes name, class, level, stats, totalXp into base64.
+ */
+function generateMyHeroCode() {
+  const char = getCharacter();
+  if (!char) return null;
+  const snapshot = {
+    v: 1,
+    id: char.id,
+    name: char.name,
+    class: char.class,
+    level: char.level,
+    stats: char.stats,
+    totalXp: char.totalXp || 0,
+    title: char.title || ''
+  };
+  try { return HERO_CODE_PREFIX + btoa(unescape(encodeURIComponent(JSON.stringify(snapshot)))); }
+  catch { return null; }
+}
+
+/** Decode and validate a Hero Code string. Returns null if invalid. */
+function decodeHeroCode(code) {
+  try {
+    if (!code || !code.startsWith(HERO_CODE_PREFIX)) return null;
+    const json = decodeURIComponent(escape(atob(code.substring(HERO_CODE_PREFIX.length))));
+    const data = JSON.parse(json);
+    if (!data.name || !data.class || !data.level || !CLASSES[data.class]) return null;
+    return data;
+  } catch { return null; }
+}
+
+/** Add a friend from a Hero Code. Returns { success, friend?, error? } */
+function addFriend(code) {
+  const data = decodeHeroCode(code.trim());
+  if (!data) return { success: false, error: 'Invalid Hero Code. Make sure you copied it fully.' };
+
+  const char = getCharacter();
+  if (char && data.id === char.id) return { success: false, error: "That's your own Hero Code!" };
+
+  const friends = getFriends();
+  if (friends.find(f => f.id === data.id)) return { success: false, error: `${data.name} is already in your friends list!` };
+
+  const friend = {
+    ...data,
+    friendId: 'friend_' + Date.now(),
+    addedAt: new Date().toISOString(),
+    code: code.trim()
+  };
+
+  const state = getState();
+  if (!state) return { success: false, error: 'No active profile' };
+  state.friends = [friend, ...(state.friends || [])];
+  saveState(state);
+  addActivity(`👥 Added ${data.name} as a friend!`);
+  return { success: true, friend };
+}
+
+/** Remove a friend by friendId */
+function removeFriend(friendId) {
+  const state = getState();
+  if (!state) return;
+  const friend = (state.friends || []).find(f => f.friendId === friendId);
+  state.friends = (state.friends || []).filter(f => f.friendId !== friendId);
+  saveState(state);
+  if (friend) addActivity(`👋 Removed ${friend.name} from friends.`);
+}
+
+/** Update a friend's data from their new Hero Code (they levelled up, etc.) */
+function updateFriend(friendId, newCode) {
+  const data = decodeHeroCode(newCode.trim());
+  if (!data) return { success: false, error: 'Invalid Hero Code.' };
+  const state = getState();
+  if (!state) return { success: false, error: 'No state' };
+  const idx = (state.friends || []).findIndex(f => f.friendId === friendId);
+  if (idx === -1) return { success: false, error: 'Friend not found' };
+  state.friends[idx] = { ...state.friends[idx], ...data, code: newCode.trim() };
+  saveState(state);
+  return { success: true };
+}
 
 // ============================================================
 // CHARACTER CREATION
@@ -487,8 +574,14 @@ function createDuel({ opponentId, taskTitle, taskCategory, taskDifficulty }) {
   const state    = getState();
   if (!state) return null;
   const char     = state.character;
-  const opponent = SIMULATED_PLAYERS.find(p => p.id === opponentId);
+
+  // Resolve opponent — check simulated players first, then friends list
+  const opponent = SIMULATED_PLAYERS.find(p => p.id === opponentId)
+                || getFriends().find(f => f.friendId === opponentId || f.id === opponentId);
   if (!opponent) return null;
+
+  // Mark whether this is a real friend duel
+  const isFriendDuel = !!getFriends().find(f => f.friendId === opponentId || f.id === opponentId);
 
   const now      = new Date();
   const deadline = new Date(now.getTime() + 48 * 3600000);
@@ -498,16 +591,25 @@ function createDuel({ opponentId, taskTitle, taskCategory, taskDifficulty }) {
 
   const duel = {
     id: 'duel_' + Date.now(),
+    isFriendDuel,
     challenger: { id: char.id, name: char.name, class: char.class, level: char.level, emoji: CLASSES[char.class]?.emoji },
-    opponent:   { id: opponent.id, name: opponent.name, class: opponent.class, level: opponent.level, emoji: CLASSES[opponent.class]?.emoji },
+    opponent:   { id: opponent.friendId || opponent.id, name: opponent.name, class: opponent.class, level: opponent.level, emoji: CLASSES[opponent.class]?.emoji },
     task:       { title: taskTitle, category: taskCategory, difficulty: taskDifficulty, xpReward },
     status: 'active',
     challengerCompleted: false, opponentCompleted: false, winner: null,
     createdAt: now.toISOString(), deadline: deadline.toISOString()
   };
 
-  if (Math.random() > 0.45) {
-    duel.opponentCompletesAt = new Date(now.getTime() + (4 + Math.random() * 40) * 3600000).toISOString();
+  // Opponents completion time — friend duels skew harder based on friend's level vs yours
+  const levelDiff = (opponent.level || 1) - char.level;
+  const baseWinChance = isFriendDuel
+    ? Math.max(0.25, Math.min(0.75, 0.5 - levelDiff * 0.04))  // friend: skill-balanced
+    : 0.55;  // simulated: slight favour to player
+
+  if (Math.random() < baseWinChance) {
+    // Opponent DOES complete — at a random time proportional to their level
+    const speedFactor = isFriendDuel ? Math.max(0.4, 1 - (opponent.level || 1) * 0.02) : 1;
+    duel.opponentCompletesAt = new Date(now.getTime() + (4 + Math.random() * 40 * speedFactor) * 3600000).toISOString();
   }
 
   state.duels = [duel, ...(state.duels || [])];
@@ -694,11 +796,13 @@ function injectNav() {
     { href: 'character.html',   icon: '⚔️', label: 'Character'   },
     { href: 'quests.html',      icon: '📋', label: 'Quests'       },
     { href: 'calendar.html',    icon: '📅', label: 'Calendar'     },
+    { href: 'friends.html',     icon: '👥', label: 'Friends'      },
     { href: 'duel.html',        icon: '🤺', label: 'Duel Arena'   },
     { href: 'leaderboard.html', icon: '🏆', label: 'Leaderboard'  }
   ];
 
-  const activeDuels = getDuels().filter(d => d.status === 'active').length;
+  const activeDuels  = getDuels().filter(d => d.status === 'active').length;
+  const friendsCount = getFriends().length;
   const emoji       = CLASSES[char.class]?.emoji || '?';
   const clsName     = CLASSES[char.class]?.name  || '';
 
@@ -716,7 +820,8 @@ function injectNav() {
                aria-current="${page === item.href ? 'page' : 'false'}">
               <span class="nav-icon" aria-hidden="true">${item.icon}</span>
               ${item.label}
-              ${item.href === 'duel.html' && activeDuels > 0 ? `<span class="notif-badge">${activeDuels}</span>` : ''}
+              ${item.href === 'duel.html'    && activeDuels  > 0 ? `<span class="notif-badge">${activeDuels}</span>`  : ''}
+              ${item.href === 'friends.html' && friendsCount > 0 ? `<span class="notif-badge" style="background:var(--green);">${friendsCount}</span>` : ''}
             </a>
           </li>`).join('')}
       </ul>

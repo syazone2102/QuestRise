@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QuestRise — Friends</title>
+  <meta name="description" content="Add friends using Hero Codes, challenge them to duels, and compare your stats." />
+  <link rel="stylesheet" href="css/style.css" />
+  <style>
+    .friends-layout {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 22px;
+      align-items: start;
+    }
+    .friends-panel { position: sticky; top: 20px; display: flex; flex-direction: column; gap: 18px; }
+
+    /* Hero Code display */
+    .hero-code-box {
+      background: rgba(16,185,129,0.05);
+      border: 1px solid rgba(16,185,129,0.25);
+      border-radius: var(--radius);
+      padding: 14px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.72rem;
+      color: var(--agi);
+      word-break: break-all;
+      letter-spacing: 0.5px;
+      line-height: 1.6;
+      cursor: text;
+      user-select: all;
+    }
+
+    /* Friend grid */
+    .friends-grid { display: flex; flex-direction: column; gap: 14px; }
+    .friend-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 18px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      transition: all 0.22s;
+      position: relative;
+    }
+    .friend-card:hover { border-color: var(--border-bright); transform: translateY(-2px); box-shadow: var(--glow-purple); }
+    .friend-card.friend-highlighted { border-color: rgba(16,185,129,0.4); box-shadow: var(--glow-green); }
+
+    .friend-avatar {
+      width: 58px; height: 58px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.8rem;
+      border: 2px solid var(--border-bright);
+      flex-shrink: 0;
+      position: relative;
+    }
+    .friend-level-ring {
+      position: absolute;
+      bottom: -4px; right: -4px;
+      background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+      color: #1a0a00;
+      font-family: 'Cinzel', serif;
+      font-size: 0.6rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    .friend-info { flex: 1; min-width: 0; }
+    .friend-name { font-family: 'Cinzel', serif; font-size: 1rem; color: var(--text-primary); margin-bottom: 4px; }
+    .friend-meta { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 8px; }
+
+    .friend-stats-mini { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+    .stat-pill {
+      font-size: 0.66rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid;
+    }
+
+    .friend-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    /* Code preview card */
+    .code-preview {
+      background: rgba(139,92,246,0.06);
+      border: 1px solid var(--border-bright);
+      border-radius: var(--radius);
+      padding: 14px;
+      margin-top: 10px;
+      display: none;
+    }
+    .code-preview.active { display: block; animation: fadeStep 0.3s ease; }
+    @keyframes fadeStep { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+
+    /* Update code modal styles */
+    .update-input { font-family: 'Courier New', monospace; font-size: 0.75rem; word-break: break-all; }
+
+    @media (max-width: 900px) {
+      .friends-layout { grid-template-columns: 1fr; }
+      .friends-panel { position: static; }
+    }
+  </style>
+</head>
+<body>
+<div id="app-wrapper" class="app-wrapper">
+  <main class="main-content">
+
+    <div class="page-header">
+      <h2>👥 Friends</h2>
+      <p>Share your Hero Code to connect with friends and challenge them to duels</p>
+    </div>
+
+    <div class="friends-layout">
+
+      <!-- ===== LEFT PANEL ===== -->
+      <div class="friends-panel">
+
+        <!-- My Hero Code -->
+        <div class="card card-glow">
+          <div class="card-header">
+            <span class="card-title" style="color:var(--agi)">🌟 My Hero Code</span>
+            <span style="font-size:0.72rem;color:var(--text-muted)">Share this with friends</span>
+          </div>
+          <p style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:12px;">
+            Friends you add appear as real duel opponents. Share your code so they can add you too!
+          </p>
+          <div class="hero-code-box" id="my-hero-code" onclick="this.select?.()">
+            Generating...
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <button class="btn btn-success btn-block" id="btn-copy-code" onclick="copyMyCode()">
+              📋 Copy Code
+            </button>
+          </div>
+
+          <!-- Mini character summary -->
+          <hr class="divider" />
+          <div id="my-char-summary" style="display:flex;align-items:center;gap:12px;">
+            <!-- injected -->
+          </div>
+        </div>
+
+        <!-- Add Friend -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">➕ Add Friend</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="friend-code-input">Paste Friend's Hero Code</label>
+            <textarea id="friend-code-input" class="form-textarea update-input"
+                      placeholder="QR1:eyJ..." rows="4"
+                      oninput="previewFriendCode()"></textarea>
+          </div>
+
+          <!-- Preview before adding -->
+          <div class="code-preview" id="friend-preview">
+            <!-- injected -->
+          </div>
+
+          <button class="btn btn-gold btn-block btn-lg" id="btn-add-friend" onclick="doAddFriend()" style="margin-top:4px;">
+            👥 Add Friend
+          </button>
+        </div>
+
+        <!-- How it works -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">📖 How It Works</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <div class="activity-item">
+              <div class="activity-icon">1️⃣</div>
+              <div class="activity-text">Copy your Hero Code above and share it with a friend</div>
+            </div>
+            <div class="activity-item">
+              <div class="activity-icon">2️⃣</div>
+              <div class="activity-text">Your friend pastes your code to add you as a friend</div>
+            </div>
+            <div class="activity-item">
+              <div class="activity-icon">3️⃣</div>
+              <div class="activity-text">Paste their code here to add them on your side</div>
+            </div>
+            <div class="activity-item">
+              <div class="activity-icon">⚔️</div>
+              <div class="activity-text">Go to <a href="duel.html" style="color:var(--purple-light)">Duel Arena</a> → Challenge → Friends tab to challenge them!</div>
+            </div>
+            <div class="activity-item">
+              <div class="activity-icon">🔄</div>
+              <div class="activity-text">Use <strong>Update Code</strong> on a friend's card to refresh their stats when they level up</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ===== RIGHT: Friends List ===== -->
+      <div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <div>
+            <span style="font-family:'Cinzel',serif;font-size:1rem;color:var(--text-primary)">Your Friends</span>
+            <span style="color:var(--text-muted);font-size:0.78rem;margin-left:10px;" id="friends-count-label">0 friends</span>
+          </div>
+          <a href="duel.html" class="btn btn-danger btn-sm" id="btn-go-arena">⚔️ Open Arena</a>
+        </div>
+        <div id="friends-grid" class="friends-grid"><!-- injected --></div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<!-- Update Code Modal -->
+<div class="modal-backdrop" id="update-modal">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-header">
+      <div class="modal-title">🔄 Update Friend's Code</div>
+      <button class="modal-close" onclick="closeUpdateModal()">✕</button>
+    </div>
+    <p style="color:var(--text-secondary);font-size:0.83rem;margin-bottom:16px;">
+      Ask your friend to copy their latest Hero Code and paste it here to sync their stats.
+    </p>
+    <input type="hidden" id="update-friend-id" />
+    <div class="form-group">
+      <label class="form-label" for="update-code-input">New Hero Code</label>
+      <textarea id="update-code-input" class="form-textarea update-input" placeholder="QR1:..." rows="4"></textarea>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-outline" style="flex:1;" onclick="closeUpdateModal()">Cancel</button>
+      <button class="btn btn-gold" style="flex:1;" id="btn-confirm-update" onclick="confirmUpdate()">Update</button>
+    </div>
+  </div>
+</div>
+
+<!-- Remove confirmation modal -->
+<div class="modal-backdrop" id="remove-modal">
+  <div class="modal" style="max-width:380px;">
+    <div class="modal-header">
+      <div class="modal-title">Remove Friend?</div>
+      <button class="modal-close" onclick="closeRemoveModal()">✕</button>
+    </div>
+    <p style="color:var(--text-secondary);font-size:0.875rem;margin-bottom:22px;" id="remove-modal-msg">
+      Remove this friend from your list?
+    </p>
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-outline" style="flex:1;" onclick="closeRemoveModal()">Cancel</button>
+      <button class="btn btn-danger" style="flex:1;" id="btn-confirm-remove" onclick="confirmRemove()">Remove</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/app.js"></script>
+<script>
+let pendingRemoveId = null;
+
+function initPage() {
+  injectNav();
+  renderMyCode();
+  renderFriendsList();
+}
+
+// ============================================================
+// MY HERO CODE
+// ============================================================
+function renderMyCode() {
+  const code = generateMyHeroCode();
+  const el = document.getElementById('my-hero-code');
+  if (code) {
+    el.textContent = code;
+  } else {
+    el.textContent = 'Could not generate code — no character found.';
+    el.style.color = 'var(--red)';
+  }
+
+  // Mini char summary
+  const char = getCharacter();
+  if (!char) return;
+  const cls = CLASSES[char.class];
+  const summary = document.getElementById('my-char-summary');
+  summary.innerHTML = `
+    <div style="font-size:2rem;">${cls.emoji}</div>
+    <div>
+      <div style="font-weight:600;font-size:0.9rem;color:var(--text-primary)">${char.name}</div>
+      <div style="font-size:0.75rem;color:var(--text-secondary);">Lv.${char.level} ${cls.name} · ${(char.totalXp||0).toLocaleString()} XP</div>
+    </div>
+  `;
+}
+
+function copyMyCode() {
+  const code = document.getElementById('my-hero-code').textContent;
+  if (!code || code.startsWith('Could')) return;
+
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(code)
+      .then(() => {
+        showToast('✅ Hero Code copied! Share it with your friend.', 'success');
+        const btn = document.getElementById('btn-copy-code');
+        btn.textContent = '✅ Copied!';
+        setTimeout(() => { btn.innerHTML = '📋 Copy Code'; }, 2500);
+      })
+      .catch(() => fallbackCopy(code));
+  } else { fallbackCopy(code); }
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.focus(); ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+  showToast('✅ Hero Code copied!', 'success');
+}
+
+// ============================================================
+// ADD FRIEND FORM
+// ============================================================
+function previewFriendCode() {
+  const code = document.getElementById('friend-code-input').value.trim();
+  const preview = document.getElementById('friend-preview');
+
+  if (!code || code.length < 10) { preview.classList.remove('active'); return; }
+  const data = decodeHeroCode(code);
+
+  if (!data) {
+    preview.classList.add('active');
+    preview.innerHTML = `<div style="color:var(--red);font-size:0.8rem;">❌ Invalid Hero Code. Make sure you copied the full code.</div>`;
+    return;
+  }
+
+  const cls = CLASSES[data.class];
+  preview.classList.add('active');
+  preview.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+      <div style="font-size:2rem;">${cls.emoji}</div>
+      <div>
+        <div style="font-weight:600;font-size:0.92rem;color:var(--text-primary)">${data.name}</div>
+        <div style="font-size:0.75rem;color:var(--text-secondary)">Lv.${data.level} ${cls.name} · ${(data.totalXp||0).toLocaleString()} XP</div>
+        ${data.title ? `<div style="font-size:0.68rem;color:var(--text-muted);margin-top:2px;font-style:italic;">${data.title}</div>` : ''}
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      ${Object.entries(data.stats || {}).map(([k,v]) =>
+        `<span class="stat-pill" style="color:var(--${k});border-color:var(--${k});background:rgba(0,0,0,0.2);">${STATS[k].short} ${v}</span>`
+      ).join('')}
+    </div>
+    <div style="font-size:0.72rem;color:var(--agi);margin-top:8px;">✅ Valid Hero Code — ready to add!</div>
+  `;
+}
+
+function doAddFriend() {
+  const code = document.getElementById('friend-code-input').value.trim();
+  if (!code) { showToast('Paste a Hero Code first!', 'warning'); return; }
+
+  const result = addFriend(code);
+  if (result.success) {
+    showToast(`👥 ${result.friend.name} added to your friends!`, 'success');
+    document.getElementById('friend-code-input').value = '';
+    document.getElementById('friend-preview').classList.remove('active');
+    renderFriendsList();
+  } else {
+    showToast('❌ ' + result.error, 'error');
+  }
+}
+
+// ============================================================
+// FRIENDS LIST
+// ============================================================
+function renderFriendsList() {
+  const friends = getFriends();
+  const container = document.getElementById('friends-grid');
+  const countLabel = document.getElementById('friends-count-label');
+  countLabel.textContent = `${friends.length} friend${friends.length !== 1 ? 's' : ''}`;
+
+  if (friends.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state" style="min-height:280px;">
+        <span class="empty-icon">👥</span>
+        <p>No friends yet. Share your Hero Code to get started!</p>
+        <button class="btn btn-outline" onclick="copyMyCode()" style="margin-top:14px;">📋 Copy My Hero Code</button>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = friends.map(f => {
+    const cls = CLASSES[f.class] || CLASSES.warrior;
+    const since = timeAgo(f.addedAt);
+    const topStats = Object.entries(f.stats || {})
+      .sort((a,b) => b[1]-a[1]).slice(0, 4);
+    const maxStat = Math.max(...topStats.map(s => s[1]), 10);
+
+    return `
+      <div class="friend-card" id="fc-${f.friendId}">
+        <div class="friend-avatar" style="background:${cls.color}22;border-color:${cls.color}55;">
+          ${cls.emoji}
+          <div class="friend-level-ring">Lv.${f.level}</div>
+        </div>
+        <div class="friend-info">
+          <div class="friend-name">${f.name}</div>
+          <div class="friend-meta">
+            <span class="tag tag-${f.class}" style="font-size:0.66rem;padding:2px 7px;">${cls.name}</span>
+            &nbsp; ${(f.totalXp||0).toLocaleString()} XP
+            <span style="color:var(--text-muted);"> · Added ${since}</span>
+          </div>
+          ${f.title ? `<div style="font-size:0.68rem;color:var(--text-muted);font-style:italic;margin-bottom:6px;">${f.title}</div>` : ''}
+          <div class="friend-stats-mini">
+            ${topStats.map(([k,v]) => `
+              <span class="stat-pill" style="color:var(--${k});border-color:var(--${k});background:rgba(0,0,0,0.25);">
+                ${STATS[k].short} ${v}
+              </span>`).join('')}
+          </div>
+          <!-- Mini stat bars -->
+          <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px;">
+            ${topStats.slice(0,3).map(([k,v]) => `
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:0.62rem;color:var(--${k});width:22px;text-align:right;font-weight:700;">${STATS[k].short}</span>
+                <div style="flex:1;height:4px;background:rgba(255,255,255,0.06);border-radius:999px;overflow:hidden;">
+                  <div style="width:${Math.min(100,(v/maxStat)*100)}%;height:100%;background:var(--${k});border-radius:999px;"></div>
+                </div>
+                <span style="font-size:0.62rem;color:var(--text-muted);width:20px;">${v}</span>
+              </div>`).join('')}
+          </div>
+          <div class="friend-actions">
+            <a href="duel.html?friend=${f.friendId}" class="btn btn-danger btn-sm" id="btn-duel-${f.friendId}">
+              ⚔️ Challenge
+            </a>
+            <button class="btn btn-outline btn-sm" onclick="openUpdateModal('${f.friendId}')" id="btn-update-${f.friendId}">
+              🔄 Update Code
+            </button>
+            <button class="btn btn-sm" style="background:rgba(239,68,68,0.1);color:var(--red);border:1px solid rgba(239,68,68,0.2);"
+                    onclick="openRemoveModal('${f.friendId}','${f.name.replace(/'/g,'&#39;')}')"
+                    id="btn-remove-${f.friendId}">
+              Remove
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ============================================================
+// UPDATE CODE MODAL
+// ============================================================
+function openUpdateModal(friendId) {
+  document.getElementById('update-friend-id').value = friendId;
+  document.getElementById('update-code-input').value = '';
+  document.getElementById('update-modal').classList.add('active');
+  setTimeout(() => document.getElementById('update-code-input').focus(), 100);
+}
+function closeUpdateModal() {
+  document.getElementById('update-modal').classList.remove('active');
+}
+function confirmUpdate() {
+  const friendId = document.getElementById('update-friend-id').value;
+  const newCode  = document.getElementById('update-code-input').value.trim();
+  if (!newCode) { showToast('Paste the new Hero Code!', 'warning'); return; }
+  const result = updateFriend(friendId, newCode);
+  if (result.success) {
+    closeUpdateModal();
+    showToast('✅ Friend stats updated!', 'success');
+    renderFriendsList();
+  } else {
+    showToast('❌ ' + result.error, 'error');
+  }
+}
+
+// ============================================================
+// REMOVE MODAL
+// ============================================================
+function openRemoveModal(friendId, name) {
+  pendingRemoveId = friendId;
+  document.getElementById('remove-modal-msg').textContent = `Remove "${name}" from your friends list?`;
+  document.getElementById('remove-modal').classList.add('active');
+}
+function closeRemoveModal() {
+  pendingRemoveId = null;
+  document.getElementById('remove-modal').classList.remove('active');
+}
+function confirmRemove() {
+  if (!pendingRemoveId) return;
+  removeFriend(pendingRemoveId);
+  closeRemoveModal();
+  renderFriendsList();
+  showToast('Friend removed.', 'info');
+}
+</script>
+</body>
+</html>
