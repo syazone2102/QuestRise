@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QuestRise — Duel Arena</title>
+  <meta name="description" content="Challenge rivals in the QuestRise Duel Arena. Issue 48-hour task challenges and prove your worth." />
+  <link rel="stylesheet" href="css/style.css" />
+  <style>
+    .arena-banner {
+      background: linear-gradient(135deg, rgba(239,68,68,0.12), rgba(139,92,246,0.08));
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: var(--radius-xl);
+      padding: 24px;
+      text-align: center;
+      margin-bottom: 22px;
+      box-shadow: var(--glow-red);
+    }
+    .arena-title {
+      font-family: 'Cinzel', serif;
+      font-size: 1.8rem;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+    }
+    .arena-stats {
+      display: flex;
+      justify-content: center;
+      gap: 28px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+    .arena-stat {
+      text-align: center;
+    }
+    .arena-stat-val {
+      font-family: 'Cinzel', serif;
+      font-size: 1.5rem;
+      font-weight: 700;
+    }
+    .arena-stat-label {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .opponent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .opponent-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+    .opponent-card:hover { border-color: var(--border-bright); transform: translateY(-3px); }
+    .opponent-card.selected { border-color: var(--red); background: rgba(239,68,68,0.06); box-shadow: var(--glow-red); }
+    .opp-avatar { font-size: 2rem; margin-bottom: 6px; }
+    .opp-name { font-weight: 600; font-size: 0.85rem; color: var(--text-primary); }
+    .opp-level { font-size: 0.72rem; color: var(--text-muted); }
+
+    .duel-form { display: grid; grid-template-columns: 1fr; gap: 14px; }
+    .challenge-layout { display: grid; grid-template-columns: 340px 1fr; gap: 22px; align-items: start; }
+
+    @media (max-width: 900px) {
+      .challenge-layout { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div id="app-wrapper" class="app-wrapper">
+  <main class="main-content">
+
+    <!-- Arena Banner -->
+    <div class="arena-banner">
+      <div class="arena-title">⚔️ Duel Arena</div>
+      <p style="color:var(--text-secondary);font-size:0.875rem;">Challenge rivals. Complete tasks. Prove your might.</p>
+      <div class="arena-stats" id="arena-stats">
+        <!-- injected -->
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs" role="tablist" id="duel-tabs" style="margin-bottom:22px;">
+      <button class="tab-btn active" id="dtab-active"    onclick="switchDuelTab('active')"    role="tab">⚔️ Active</button>
+      <button class="tab-btn"        id="dtab-challenge" onclick="switchDuelTab('challenge')"  role="tab">➕ Challenge</button>
+      <button class="tab-btn"        id="dtab-history"   onclick="switchDuelTab('history')"   role="tab">📜 History</button>
+    </div>
+
+    <!-- Active Duels -->
+    <div id="panel-active">
+      <div id="active-duels-list"><!-- injected --></div>
+    </div>
+
+    <!-- Challenge Panel -->
+    <div id="panel-challenge" style="display:none;">
+      <div class="challenge-layout">
+
+        <!-- Left: Opponent selection -->
+        <div>
+          <div class="card" style="margin-bottom:16px;">
+            <div class="card-header">
+              <span class="card-title">🎯 Create Challenge</span>
+            </div>
+
+            <p class="section-title">Step 1: Select Opponent</p>
+            <div class="opponent-grid" id="opponent-grid"><!-- injected --></div>
+
+            <p class="section-title">Step 2: Define the Challenge</p>
+
+            <div class="form-group">
+              <label class="form-label" for="duel-task-title">Challenge Task *</label>
+              <input type="text" id="duel-task-title" class="form-input" placeholder="e.g. Complete 100 pushups" maxlength="80" />
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" for="duel-task-cat">Category</label>
+                <select id="duel-task-cat" class="form-select"><!-- injected --></select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="duel-task-diff">Difficulty</label>
+                <select id="duel-task-diff" class="form-select">
+                  <option value="easy">🟢 Easy</option>
+                  <option value="medium" selected>🟡 Medium</option>
+                  <option value="hard">🔴 Hard</option>
+                  <option value="epic">💎 Epic</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- XP Preview -->
+            <div style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.25);border-radius:var(--radius);padding:12px;margin-bottom:16px;text-align:center;">
+              <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;">Duel XP Reward (if you win)</div>
+              <div style="font-family:'Cinzel',serif;font-size:1.3rem;color:var(--red)" id="duel-xp-preview">-- XP</div>
+            </div>
+
+            <button class="btn btn-danger btn-lg btn-block" id="btn-issue-challenge" onclick="issueChallenge()">
+              ⚔️ Issue Challenge!
+            </button>
+          </div>
+        </div>
+
+        <!-- Right: Rules + Info -->
+        <div>
+          <div class="card card-glow" style="margin-bottom:16px;">
+            <div class="card-header">
+              <span class="card-title">📜 Duel Rules</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              <div class="activity-item">
+                <div class="activity-icon">⚔️</div>
+                <div class="activity-text">You issue a challenge with a specific task and timeframe</div>
+              </div>
+              <div class="activity-item">
+                <div class="activity-icon">⏱️</div>
+                <div class="activity-text">Both you and your opponent have <strong>48 hours</strong> to complete the task</div>
+              </div>
+              <div class="activity-item">
+                <div class="activity-icon">🏆</div>
+                <div class="activity-text">If <strong>you complete it first</strong>, or your opponent doesn't complete it — <strong>you win!</strong></div>
+              </div>
+              <div class="activity-item">
+                <div class="activity-icon">💎</div>
+                <div class="activity-text">Winners earn <strong>1.5× XP</strong> bonus compared to a regular quest</div>
+              </div>
+              <div class="activity-item">
+                <div class="activity-icon">💀</div>
+                <div class="activity-text">If you don't complete the task in 48 hours, you lose by default</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Opponent Stats Preview -->
+          <div class="card" id="opponent-preview" style="display:none;">
+            <div class="card-header">
+              <span class="card-title">👤 Opponent Stats</span>
+            </div>
+            <div id="opponent-detail"><!-- injected --></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- History Panel -->
+    <div id="panel-history" style="display:none;">
+      <div id="duel-history-list"><!-- injected --></div>
+    </div>
+
+  </main>
+</div>
+
+<script src="js/app.js"></script>
+<script>
+let currentDuelTab = 'active';
+let selectedOpponentId = null;
+let countdownTimers = [];
+
+function initPage() {
+  injectNav();
+  buildOpponentGrid();
+  buildCatSelect();
+  renderArenaStats();
+  renderActiveDuels();
+
+  // Live XP preview
+  ['duel-task-cat','duel-task-diff'].forEach(id => {
+    document.getElementById(id).addEventListener('change', updateDuelXPPreview);
+  });
+  updateDuelXPPreview();
+}
+
+function buildOpponentGrid() {
+  const grid = document.getElementById('opponent-grid');
+  grid.innerHTML = SIMULATED_PLAYERS.map(p => {
+    const cls = CLASSES[p.class];
+    return `
+      <div class="opponent-card" id="opp-${p.id}" onclick="selectOpponent('${p.id}')">
+        <div class="opp-avatar">${cls.emoji}</div>
+        <div class="opp-name">${p.name}</div>
+        <div class="opp-level">Lv.${p.level} ${cls.name}</div>
+        <div style="margin-top:6px;"><span class="tag tag-${p.class}">${cls.name}</span></div>
+      </div>
+    `;
+  }).join('');
+}
+
+function buildCatSelect() {
+  const sel = document.getElementById('duel-task-cat');
+  sel.innerHTML = Object.entries(CATEGORIES).map(([k,v]) =>
+    `<option value="${k}">${v.icon} ${v.label}</option>`
+  ).join('');
+}
+
+function selectOpponent(id) {
+  selectedOpponentId = id;
+  document.querySelectorAll('.opponent-card').forEach(c => c.classList.remove('selected'));
+  const card = document.getElementById('opp-' + id);
+  if (card) card.classList.add('selected');
+
+  // Show opponent detail
+  const p = SIMULATED_PLAYERS.find(p => p.id === id);
+  if (p) renderOpponentDetail(p);
+}
+
+function renderOpponentDetail(p) {
+  const preview = document.getElementById('opponent-preview');
+  const detail = document.getElementById('opponent-detail');
+  preview.style.display = 'block';
+  const cls = CLASSES[p.class];
+
+  detail.innerHTML = `
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;">
+      <div style="font-size:2.5rem;">${cls.emoji}</div>
+      <div>
+        <div style="font-weight:600;font-size:1rem;color:var(--text-primary)">${p.name}</div>
+        <div style="font-size:0.8rem;color:var(--text-secondary)">Level ${p.level} ${cls.name}</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      ${Object.entries(p.stats).map(([k,v]) => `
+        <div style="display:flex;justify-content:space-between;font-size:0.78rem;padding:4px 0;border-bottom:1px solid var(--border);">
+          <span style="color:var(--${k})">${STATS[k].short}</span>
+          <span style="font-weight:600">${v}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function updateDuelXPPreview() {
+  const cat = document.getElementById('duel-task-cat').value;
+  const diff = document.getElementById('duel-task-diff').value;
+  const catInfo = CATEGORIES[cat] || CATEGORIES.other;
+  const diffInfo = DIFFICULTIES[diff] || DIFFICULTIES.medium;
+  const xp = Math.round(catInfo.xp * diffInfo.multiplier * 1.5);
+  document.getElementById('duel-xp-preview').textContent = `+${xp} XP`;
+}
+
+function renderArenaStats() {
+  const char = getCharacter();
+  if (!char) return;
+  const total = (char.duelsWon || 0) + (char.duelsLost || 0);
+  const rate = total > 0 ? Math.round((char.duelsWon / total) * 100) : 0;
+  const active = getDuels().filter(d => d.status === 'active').length;
+
+  document.getElementById('arena-stats').innerHTML = `
+    <div class="arena-stat">
+      <div class="arena-stat-val" style="color:var(--green)">${char.duelsWon || 0}</div>
+      <div class="arena-stat-label">Wins ⚔️</div>
+    </div>
+    <div class="arena-stat">
+      <div class="arena-stat-val" style="color:var(--red)">${char.duelsLost || 0}</div>
+      <div class="arena-stat-label">Losses 💀</div>
+    </div>
+    <div class="arena-stat">
+      <div class="arena-stat-val" style="color:var(--gold)">${rate}%</div>
+      <div class="arena-stat-label">Win Rate 🎯</div>
+    </div>
+    <div class="arena-stat">
+      <div class="arena-stat-val" style="color:var(--purple-light)">${active}</div>
+      <div class="arena-stat-label">Active ⏱️</div>
+    </div>
+  `;
+}
+
+function switchDuelTab(tab) {
+  currentDuelTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.classList.toggle('active', b.id === 'dtab-' + tab);
+  });
+  ['active','challenge','history'].forEach(t => {
+    const p = document.getElementById('panel-' + t);
+    if (p) p.style.display = t === tab ? 'block' : 'none';
+  });
+
+  if (tab === 'history') renderDuelHistory();
+  if (tab === 'active') renderActiveDuels();
+}
+
+function renderActiveDuels() {
+  const container = document.getElementById('active-duels-list');
+  const duels = getDuels().filter(d => d.status === 'active');
+
+  // Clear old timers
+  countdownTimers.forEach(t => clearInterval(t));
+  countdownTimers = [];
+
+  if (duels.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <span class="empty-icon">⚔️</span>
+        <p>No active duels. Head to the Challenge tab to start one!</p>
+        <button class="btn btn-danger" onclick="switchDuelTab('challenge')" style="margin-top:14px;">⚔️ Issue a Challenge</button>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = duels.map(d => {
+    const cd = countdown(d.deadline);
+    const char = getCharacter();
+    const charEmoji = char ? CLASSES[char.class]?.emoji : '⚔️';
+    const oppEmoji = CLASSES[d.opponent.class]?.emoji || '⚔️';
+    const cat = CATEGORIES[d.task.category] || CATEGORIES.other;
+
+    return `
+      <div class="duel-card ${cd.urgent ? 'active-duel' : ''}" id="dc-${d.id}">
+        <div class="duel-header">
+          <div>
+            <span style="font-family:'Cinzel',serif;font-size:0.85rem;color:var(--text-primary)">Duel Challenge</span>
+            <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">Issued ${timeAgo(d.createdAt)}</div>
+          </div>
+          <div style="text-align:right;">
+            <div class="countdown ${cd.urgent ? 'urgent' : ''}" id="duel-cd-${d.id}">${cd.text}</div>
+            <div style="font-size:0.68rem;color:var(--text-muted)">remaining</div>
+          </div>
+        </div>
+
+        <div class="duel-vs">
+          <div class="duel-fighter">
+            <div class="fighter-avatar" style="background:rgba(139,92,246,0.1);border-color:var(--border-bright);">${charEmoji}</div>
+            <div class="fighter-name">${d.challenger.name}</div>
+            <div class="fighter-level">Lv.${d.challenger.level}</div>
+            ${d.challengerCompleted ? `<div style="color:var(--green);font-size:0.72rem;margin-top:3px;">✅ Done!</div>` : ''}
+          </div>
+          <div class="duel-vs-badge">VS</div>
+          <div class="duel-fighter">
+            <div class="fighter-avatar" style="background:rgba(239,68,68,0.08);border-color:rgba(239,68,68,0.3);">${oppEmoji}</div>
+            <div class="fighter-name">${d.opponent.name}</div>
+            <div class="fighter-level">Lv.${d.opponent.level}</div>
+            <div style="color:var(--text-muted);font-size:0.72rem;margin-top:3px;">😤 Competing...</div>
+          </div>
+        </div>
+
+        <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin:12px 0;">
+          <div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;">Task</div>
+          <div style="font-size:0.88rem;font-weight:600;color:var(--text-primary);margin-bottom:6px;">"${d.task.title}"</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <span class="tag tag-${cat.stat}">${cat.icon} ${cat.label}</span>
+            <span class="xp-badge">+${d.task.xpReward} XP if you win</span>
+          </div>
+        </div>
+
+        ${!d.challengerCompleted ? `
+          <button class="btn btn-success btn-block" onclick="completeMyDuel('${d.id}')">
+            ✅ I Completed This Task!
+          </button>` : `
+          <div style="text-align:center;padding:10px;color:var(--green);font-size:0.85rem;">
+            ✅ You've completed your part! Waiting for results...
+          </div>`}
+      </div>
+    `;
+  }).join('');
+
+  // Start countdown timers
+  const timer = setInterval(() => {
+    duels.forEach(d => {
+      const el = document.getElementById('duel-cd-' + d.id);
+      if (!el) return;
+      const cd = countdown(d.deadline);
+      el.textContent = cd.text;
+      el.className = 'countdown' + (cd.urgent ? ' urgent' : '');
+    });
+  }, 1000);
+  countdownTimers.push(timer);
+}
+
+function completeMyDuel(id) {
+  const result = completeDuelChallenge(id);
+  if (result) {
+    const won = result.winner === 'challenger';
+    showToast(
+      won ? `🏆 Victory! You won the duel! +${result.task.xpReward} XP` : '😤 You lost this time. Train harder!',
+      won ? 'success' : 'warning'
+    );
+    renderArenaStats();
+    renderActiveDuels();
+    // If now 0 active duels, show history
+    if (getDuels().filter(d => d.status === 'active').length === 0) {
+      setTimeout(() => switchDuelTab('history'), 1500);
+    }
+  }
+}
+
+function issueChallenge() {
+  if (!selectedOpponentId) {
+    showToast('Select an opponent first!', 'warning');
+    return;
+  }
+  const title = document.getElementById('duel-task-title').value.trim();
+  if (!title) {
+    showToast('Define the challenge task!', 'warning');
+    document.getElementById('duel-task-title').focus();
+    return;
+  }
+
+  const duel = createDuel({
+    opponentId: selectedOpponentId,
+    taskTitle: title,
+    taskCategory: document.getElementById('duel-task-cat').value,
+    taskDifficulty: document.getElementById('duel-task-diff').value
+  });
+
+  if (duel) {
+    const opp = SIMULATED_PLAYERS.find(p => p.id === selectedOpponentId);
+    showToast(`⚔️ Challenge issued to ${opp?.name}! You have 48 hours!`, 'success');
+    document.getElementById('duel-task-title').value = '';
+    selectedOpponentId = null;
+    document.querySelectorAll('.opponent-card').forEach(c => c.classList.remove('selected'));
+    document.getElementById('opponent-preview').style.display = 'none';
+    renderArenaStats();
+    switchDuelTab('active');
+  }
+}
+
+function renderDuelHistory() {
+  const container = document.getElementById('duel-history-list');
+  const duels = getDuels().filter(d => d.status !== 'active');
+
+  if (duels.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <span class="empty-icon">📜</span>
+        <p>No duel history yet. Issue your first challenge!</p>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = duels.map(d => {
+    const won = d.winner === 'challenger';
+    const oppEmoji = CLASSES[d.opponent.class]?.emoji || '⚔️';
+    const cat = CATEGORIES[d.task?.category] || CATEGORIES.other;
+
+    return `
+      <div class="duel-card ${won ? 'won' : 'lost'}">
+        <div class="duel-header">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:1.3rem;">${won ? '🏆' : '💀'}</span>
+            <div>
+              <div style="font-weight:600;font-size:0.88rem;color:${won ? 'var(--agi)' : 'var(--red)'}">
+                ${won ? 'VICTORY' : 'DEFEAT'}
+              </div>
+              <div style="font-size:0.72rem;color:var(--text-muted)">vs ${d.opponent.name} • ${formatDate(d.createdAt)}</div>
+            </div>
+          </div>
+          ${d.status === 'expired' ? `<span class="tag" style="background:rgba(245,158,11,0.1);color:var(--vit);">Expired</span>` : ''}
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin:10px 0;">
+          <span style="font-size:1.3rem;">${oppEmoji}</span>
+          <div>
+            <div style="font-size:0.83rem;color:var(--text-secondary)">Task: "${d.task?.title}"</div>
+            <div style="display:flex;gap:8px;margin-top:4px;">
+              <span class="tag tag-${cat.stat}">${cat.icon} ${cat.label}</span>
+              ${won ? `<span class="xp-badge">+${d.task?.xpReward} XP earned</span>` : ''}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+</script>
+</body>
+</html>
